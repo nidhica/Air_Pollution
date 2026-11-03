@@ -1,0 +1,12 @@
+{
+  "purpose": "Demonstration sign-in for the AEROSCOPE portal. This is not a production user directory.",
+  "algorithm": "pbkdf2_hmac_sha256",
+  "users": [
+    {
+      "email": "analyst@aeroscope.local",
+      "salt_hex": "8b7fd222c3503e7758c09bd93642c198",
+      "iterations": 200000,
+      "password_hash": "bf045f9dea6cf37c5f8208148707d1d20cf7e7f67bf04f6d6c0f200c664b00a9"
+    }
+  ]
+}

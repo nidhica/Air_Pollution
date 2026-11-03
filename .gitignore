@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.yaml
+secrets.yml
+.streamlit/secrets.toml
+
+# XKDR bulk archive and anything derived from it
+data/raw/**
+data/interim/**
+data/processed/**
+data/spark-warehouse/**
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/spark-warehouse/.gitkeep
+
+# Columnar and bulky extracts, wherever they land
+*.parquet
+*.orc
+*.avro
+*.snappy
+*.partial
+
+# Spark local artifacts
+metastore_db/
+derby.log
+spark-warehouse/
+hs_err_pid*.log
+*.log
+
+# Runtime logs
+logs/**
+!logs/.gitkeep
+
+# Packaging and IDE
+build/
+dist/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

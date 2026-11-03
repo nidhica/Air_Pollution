@@ -1,0 +1,86 @@
+# Paths are relative to the repository root.
+# Dataset files are not part of the repository. `python main.py acquire`
+# downloads the XKDR bulk files into data/raw and does not modify them.
+#
+# Measurement field names below are the names published in the XKDR
+# bulk-file documentation (https://airquality.xkdr.org/). Confirm them
+# against the first local Parquet file before writing transformations.
+# This file does not enforce a Spark schema; Parquet is read as stored.
+
+project:
+  name: Air Pollution Spike Detection and Spatiotemporal Analytics in Indian Cities
+
+dataset:
+  name: India Air Quality Database
+  provider: XKDR Forum
+  documentation_url: https://airquality.xkdr.org/
+  licence: CC-BY-4.0
+  # CPCB Continuous Ambient Air Quality Monitoring only.
+  # The US Embassy series in the same archive uses source value us_embassy.
+  source_filter: cpcb_caaqm
+  pollutants:
+    - PM2.5
+    - PM10
+  # collected_at is a naive timestamp in Indian Standard Time.
+  timezone: Asia/Kolkata
+  # Inclusive IST dates (YYYY-MM-DD). Null uses the full local archive.
+  date_start: "2024-01-01"
+  date_end: "2024-01-31"
+  columns:
+    station_id: station_id
+    parameter: parameter_name
+    timestamp: collected_at
+    value: value
+    city: city_name
+    source: source
+  partitions:
+    - year
+    - month
+
+paths:
+  raw_root: data/raw
+  # Hive-style layout published by XKDR.
+  measurements_glob: data/raw/v1/measurements/year=*/month=*/data.parquet
+  stations_file: data/raw/v1/stations.parquet
+  parameters_file: data/raw/v1/parameters.parquet
+  interim_dir: data/interim
+  processed_dir: data/processed
+  spark_warehouse_dir: data/spark-warehouse
+  logs_dir: logs
+
+spikes:
+  # Previous valid observations for this station and pollutant, excluding the current row.
+  baseline_window: 24
+  # A spike is not flagged until at least this many valid observations are in the baseline.
+  minimum_baseline: 12
+  # Sample standard deviation. A candidate spike is strictly above mean + this many deviations.
+  threshold_sigmas: 3
+
+analytics:
+  # Valid observations required before a station-pollutant mean enters the elevated comparison.
+  # 168 is seven days of hourly values.
+  elevated_minimum_valid_observations: 168
+  # Exact percentile of those means, computed separately for each pollutant.
+  # A series at or above this percentile is consistently elevated.
+  elevated_percentile: 0.9
+  # A date or clock hour is unusual when its spike count, or separately its eligible
+  # spike rate, is strictly above the mean plus this many sample standard deviations.
+  unusual_sigmas: 2
+
+spark:
+  app_name: air-pollution-bda
+  master: "local[*]"
+  # Laptop default. Raise this when the same code runs against a cluster.
+  shuffle_partitions: 8
+  # Local mode runs tasks in the driver process.
+  driver_memory: 2g
+  executor_memory: 2g
+  timezone: Asia/Kolkata
+  log_level: WARN
+  ui_enabled: true
+  adaptive_execution: true
+  arrow_enabled: true
+  parquet_compression: snappy
+  # Explicit Parquet paths are used instead of a Hive metastore.
+  # This avoids Derby files on Windows paths that contain spaces.
+  catalog: in-memory

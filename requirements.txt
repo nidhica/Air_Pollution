@@ -1,0 +1,13 @@
+# Python 3.10 or newer. This machine uses Python 3.12.
+# JDK 17 or 21 is required and is not installed by pip.
+# PySpark 4.0.5 or newer includes the Windows Python 3.12 worker fix (SPARK-53759).
+# py4j is installed automatically as a PySpark dependency.
+
+pyspark>=4.0.5,<5
+pyarrow>=14.0.1
+# PySpark 4.3 does not yet fully support pandas 3.
+pandas>=2.2.0,<3
+PyYAML>=6.0.1
+streamlit>=1.40.0
+plotly>=5.24.0
+pytest>=8.0.0
