@@ -24,8 +24,8 @@ dataset:
   # collected_at is a naive timestamp in Indian Standard Time.
   timezone: Asia/Kolkata
   # Inclusive IST dates (YYYY-MM-DD). Null uses the full local archive.
-  date_start: "2024-01-01"
-  date_end: "2024-01-31"
+  date_start: "2025-08-01"
+  date_end: "2025-08-31"
   columns:
     station_id: station_id
     parameter: parameter_name

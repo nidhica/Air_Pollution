@@ -1,7 +1,7 @@
 """Dashboard loading and filter tests.
 
 Filter tests use synthetic tables. The repository test reads the saved
-January analytics outputs when those files are present. Neither test writes
+August 2025 analytics outputs when those files are present. Neither test writes
 to data/raw or data/processed.
 """
 
@@ -124,34 +124,34 @@ def test_missing_report_fails_before_a_table_is_read(tmp_path: Path) -> None:
         load_report(tmp_path / "data" / "interim" / "analytics_report.json")
 
 
-@pytest.mark.skipif(not _REPORT.is_file(), reason="January analytics outputs are not on disk")
-def test_repository_bundle_matches_january_results() -> None:
+@pytest.mark.skipif(not _REPORT.is_file(), reason="August 2025 analytics outputs are not on disk")
+def test_repository_bundle_matches_august_2025_results() -> None:
     report_bytes = _REPORT.read_bytes()
     bundle = load_bundle(PROJECT_ROOT)
 
     assert _REPORT.read_bytes() == report_bytes
     counts = bundle.report["counts"]
-    assert counts["total_records"] == 667280
-    assert counts["valid_measurements"] == 667280
-    assert counts["eligible_records"] == 655383
-    assert counts["spike_records"] == 16058
-    assert bundle.annotated_rows == 667280
-    assert bundle.spike_rows == 16058
+    assert counts["total_records"] == 421625
+    assert counts["valid_measurements"] == 421625
+    assert counts["eligible_records"] == 413977
+    assert counts["spike_records"] == 9407
+    assert bundle.annotated_rows == 421625
+    assert bundle.spike_rows == 9407
     assert len(bundle.daily) == 62
     assert len(bundle.hourly) == 1488
-    assert len(bundle.stations) == 993
+    assert len(bundle.stations) == 639
     assert bundle.stations["latitude"].isna().sum() == bundle.stations.loc[
         bundle.stations["latitude"].isna(), "station_id"
     ].shape[0]
     missing_ids = set(unlocated_stations(bundle.stations)["station_id"])
-    assert len(missing_ids) == 45
+    assert len(missing_ids) == 9
     assert unlocated_stations(bundle.stations)["city_name"].isna().all()
     assert located_stations(bundle.stations)["latitude"].notna().all()
     totals = {row["parameter_name"]: row for row in bundle.report["pollutant_totals"]}
-    assert totals["PM2.5"]["spike_count"] == 7787
-    assert totals["PM10"]["spike_count"] == 8271
-    assert totals["PM2.5"]["mean_valid_value"] == pytest.approx(84.94324110177112)
-    assert totals["PM10"]["mean_valid_value"] == pytest.approx(155.4562315110614)
+    assert totals["PM2.5"]["spike_count"] == 4690
+    assert totals["PM10"]["spike_count"] == 4717
+    assert totals["PM2.5"]["mean_valid_value"] == pytest.approx(22.364927715603603)
+    assert totals["PM10"]["mean_valid_value"] == pytest.approx(54.94236958289145)
 
 
 def _write_fixture(root: Path) -> None:

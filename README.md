@@ -1,6 +1,6 @@
 # Air Pollution Spike Detection and Spatiotemporal Analytics in Indian Cities
 
-Academic Big Data Analytics project for CPCB CAAQM PM2.5 and PM10. The pipeline downloads the XKDR archive, inspects it, cleans it, flags statistical spikes, aggregates the results, and presents them in a Streamlit dashboard. This repository does not contain air-quality measurements or computed results.
+Academic Big Data Analytics project for CPCB CAAQM PM2.5 and PM10. The pipeline downloads the XKDR archive, inspects it, cleans it, flags statistical spikes, aggregates the results, and presents them in a Streamlit dashboard. The configured window in `config/settings.yaml` is 1–31 August 2025. That is the latest month in the XKDR bulk archive with a full CPCB CAAQM PM2.5 and PM10 record. March 2026 is published, but that file contains only US Embassy PM2.5. This repository does not contain air-quality measurements or computed results.
 
 ## Question and scope
 

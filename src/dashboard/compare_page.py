@@ -34,8 +34,9 @@ def render_city_comparison(bundle: AnalyticsBundle, portal: CityPortal) -> None:
     places = places_from_cards(cards)
     labels = [place_label(city_name, state_name) for city_name, state_name in places]
     st.title("City Comparison")
+    window = _saved_window_text(portal.daily)
     st.caption(
-        "Compare two or three cities from the January 2024 CPCB CAAQM PM2.5 and PM10 records. "
+        f"Compare two or three cities from the {window} CPCB CAAQM PM2.5 and PM10 records. "
         "Averages stay inside each pollutant. The national daily and hourly tables are not used."
     )
     if len(labels) < 2:
@@ -46,7 +47,9 @@ def render_city_comparison(bundle: AnalyticsBundle, portal: CityPortal) -> None:
     start, end, full_start, full_end = _date_controls(portal.daily)
     st.session_state["comparison_city_labels"] = chosen
     st.session_state["comparison_dates"] = (start, end)
-    st.caption("The saved measurements cover 1–31 January 2024. The date range is applied to every selected city.")
+    st.caption(
+        f"The saved measurements cover {window}. The date range is applied to every selected city."
+    )
     if st.button("Compare", type="primary"):
         resolved = selected_places(labels, places, chosen)
         error = selection_error(resolved)
@@ -105,6 +108,16 @@ def _restore_cities(labels: list[str]) -> None:
     for key, value in zip(("compare_city_1", "compare_city_2", "compare_city_3"), padded[:3]):
         if value in allowed:
             restore_saved_value(st.session_state, key, value)
+
+
+def _saved_window_text(daily: pd.DataFrame) -> str:
+    """Label the dates actually stored in the city series."""
+
+    start = pd.Timestamp(daily["observation_date"].min()).date()
+    end = pd.Timestamp(daily["observation_date"].max()).date()
+    if start.year == end.year and start.month == end.month:
+        return f"{start.day}–{end.day} {start.strftime('%B %Y')}"
+    return f"{start.isoformat()} to {end.isoformat()}"
 
 
 def _date_controls(daily: pd.DataFrame) -> tuple[object, object, object, object]:
