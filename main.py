@@ -48,8 +48,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers.add_parser(
         "acquire",
-        help="Download XKDR bulk Parquet into data/raw without modifying the files.",
+        help="Download every XKDR month inside the configured date window. Prefer acquire-xkdr.",
     )
+    planner = subparsers.add_parser(
+        "acquire-xkdr",
+        help="Plan XKDR month downloads. Add --download with an explicit month range to fetch files.",
+    )
+    planner.add_argument("--download", action="store_true", help="Download only the explicit month selection.")
+    planner.add_argument("--month", action="append", default=[], help="One YYYY-MM month. Repeat for several months.")
+    planner.add_argument("--start", help="First YYYY-MM month in an explicit range.")
+    planner.add_argument("--end", help="Last YYYY-MM month in an explicit range.")
     subparsers.add_parser(
         "inspect",
         help="Read the local Parquet files with the shared Spark session and write a report.",
@@ -74,6 +82,14 @@ def main(argv: list[str] | None = None) -> int:
         "build-city-series",
         help="Aggregate annotated measurements into city daily and hourly Parquet files.",
     )
+    subparsers.add_parser(
+        "fetch-data-gov",
+        help="Download the current data.gov.in air-quality snapshot without changing XKDR files.",
+    )
+    subparsers.add_parser(
+        "prepare-data-gov",
+        help="Clean the stored data.gov.in snapshot with Spark. Spike detection is not applied.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -85,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
             return probe_command()
         if args.command == "acquire":
             return acquire_command()
+        if args.command == "acquire-xkdr":
+            return acquire_xkdr_command(args)
         if args.command == "inspect":
             return inspect_command()
         if args.command == "preprocess":
@@ -97,6 +115,10 @@ def main(argv: list[str] | None = None) -> int:
             return evaluate_performance_command()
         if args.command == "build-city-series":
             return build_city_series_command()
+        if args.command == "fetch-data-gov":
+            return fetch_data_gov_command()
+        if args.command == "prepare-data-gov":
+            return prepare_data_gov_command()
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
@@ -175,6 +197,34 @@ def probe_command() -> int:
         print(format_diagnostic(item))
         if item.status != 200:
             failed = True
+    return 1 if failed else 0
+
+
+def acquire_xkdr_command(args: argparse.Namespace) -> int:
+    from ingestion.acquire import AcquisitionError
+    from ingestion.xkdr_plan import MonthRequest, format_plan, months_between, parse_month_token, plan_acquisition
+
+    selected: list[MonthRequest] = []
+    try:
+        selected = [parse_month_token(token) for token in args.month]
+        if args.start or args.end:
+            if not args.start or not args.end:
+                print("Pass both --start and --end as YYYY-MM.", file=sys.stderr)
+                return 2
+            selected.extend(months_between(parse_month_token(args.start), parse_month_token(args.end)))
+        manifest = plan_acquisition(
+            load_config(),
+            months=tuple(selected),
+            download=bool(args.download),
+        )
+    except AcquisitionError as exc:
+        print(f"Acquisition error: {exc}", file=sys.stderr)
+        return 2 if args.download and not selected else 1
+    print(format_plan(manifest))
+    months = manifest.get("months")
+    failed = isinstance(months, list) and any(
+        isinstance(item, dict) and item.get("download_status") == "failed" for item in months
+    )
     return 1 if failed else 0
 
 
@@ -280,6 +330,36 @@ def build_city_series_command() -> int:
     finally:
         stop_spark(spark)
     print(format_city_series_report(report))
+    return 0
+
+
+def fetch_data_gov_command() -> int:
+    from ingestion.data_gov import DataGovError, fetch_snapshot, format_ingest_report
+
+    config = load_config()
+    try:
+        report = fetch_snapshot(config, pause_seconds=0.2)
+    except DataGovError as exc:
+        print(f"data.gov.in error: {exc}", file=sys.stderr)
+        return 1
+    print(format_ingest_report(report))
+    return 0
+
+
+def prepare_data_gov_command() -> int:
+    from analytics.data_gov import DataGovPrepareError, format_prepare_report, prepare_data_gov
+
+    config = load_config()
+    spark = build_spark_session(config, force_new=True)
+    try:
+        try:
+            report = prepare_data_gov(config, spark)
+        except DataGovPrepareError as exc:
+            print(f"data.gov.in preparation error: {exc}", file=sys.stderr)
+            return 1
+    finally:
+        stop_spark(spark)
+    print(format_prepare_report(report))
     return 0
 
 

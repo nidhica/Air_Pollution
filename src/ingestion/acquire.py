@@ -73,6 +73,8 @@ class BulkFile:
     key: str
     year: int | None = None
     month: int | None = None
+    size_bytes: int | None = None
+    row_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -179,7 +181,8 @@ def acquire_dataset(
         date_end=config.dataset.date_end,
     )
     results = tuple(
-        _download_one(client, origin, key, config.paths.raw_root, item) for item in plan.selected
+        _download_one(client, origin, key, config.paths.raw_root, item, retries=1, validate_parquet=False)
+        for item in plan.selected
     )
     for result in results:
         detail = f" ({result.message})" if result.message else ""
@@ -276,12 +279,14 @@ def parse_file_list(payload: object) -> tuple[BulkFile, ...]:
         key = item["key"]
         _reject_unsafe_key(key)
         match = _MEASUREMENT_KEY.fullmatch(key)
+        size_bytes = _optional_int(item, ("size_bytes", "size", "bytes", "content_length", "file_size"))
+        row_count = _optional_int(item, ("row_count", "rows", "n_rows"))
         if match:
-            parsed.append(BulkFile(key, int(match.group(1)), int(match.group(2))))
+            parsed.append(BulkFile(key, int(match.group(1)), int(match.group(2)), size_bytes, row_count))
         elif key.startswith("v1/measurements/"):
             raise AcquisitionError(f"Unrecognised measurement key: {key}")
         else:
-            parsed.append(BulkFile(key))
+            parsed.append(BulkFile(key, size_bytes=size_bytes, row_count=row_count))
     return tuple(parsed)
 
 
@@ -320,12 +325,64 @@ def format_acquisition_report(report: AcquisitionReport) -> str:
     )
 
 
+def download_bulk_file(
+    transport: Transport,
+    origin: str,
+    api_key: str,
+    raw_root: Path,
+    item: BulkFile,
+    *,
+    retries: int = 3,
+    validate_parquet: bool = True,
+) -> FileResult:
+    """Download one bulk object. A non-empty final file is never replaced."""
+
+    return _download_one(
+        transport,
+        origin,
+        api_key,
+        raw_root,
+        item,
+        retries=retries,
+        validate_parquet=validate_parquet,
+    )
+
+
 def _download_one(
     transport: Transport,
     origin: str,
     api_key: str,
     raw_root: Path,
     item: BulkFile,
+    *,
+    retries: int = 1,
+    validate_parquet: bool = False,
+) -> FileResult:
+    attempts = max(1, retries)
+    result: FileResult | None = None
+    for attempt in range(attempts):
+        result = _transfer_one(
+            transport,
+            origin,
+            api_key,
+            raw_root,
+            item,
+            validate_parquet=validate_parquet,
+        )
+        if result.status != "failed" or attempt == attempts - 1 or not _retriable(result.message):
+            return result
+    assert result is not None
+    return result
+
+
+def _transfer_one(
+    transport: Transport,
+    origin: str,
+    api_key: str,
+    raw_root: Path,
+    item: BulkFile,
+    *,
+    validate_parquet: bool,
 ) -> FileResult:
     destination = _destination(raw_root, item.key)
     partial = destination.with_name(destination.name + ".partial")
@@ -400,6 +457,11 @@ def _download_one(
                 written,
                 f"Incomplete object: received {written} of {expected} bytes.",
             )
+        if validate_parquet:
+            ok, reason = parquet_file_status(partial)
+            if not ok:
+                partial.unlink(missing_ok=True)
+                return FileResult(item.key, str(destination), "failed", written, reason)
         partial.replace(destination)
         status = "resumed" if response.status == 206 and offset else "downloaded"
         return FileResult(item.key, str(destination), status, written, "")
@@ -549,6 +611,50 @@ def _expected_total(response: ResponseStream, write_offset: int) -> int | None:
     if response.status == 206:
         return write_offset + size
     return size
+
+
+def parquet_file_status(path: Path) -> tuple[bool, str]:
+    """Return whether a local file is a readable measurement Parquet file.
+
+    The check reads the footer and schema. It does not rewrite the file.
+    """
+
+    try:
+        import pyarrow.parquet as pq
+
+        parquet = pq.ParquetFile(path)
+        names = set(parquet.schema_arrow.names)
+    except Exception as exc:
+        return False, f"Parquet validation failed: {exc.__class__.__name__}."
+    required = {"station_id", "parameter_name", "collected_at", "value", "source", "unit"}
+    missing = sorted(required - names)
+    if missing:
+        return False, "Parquet schema is missing: " + ", ".join(missing) + "."
+    if parquet.metadata is None or parquet.metadata.num_rows < 1:
+        return False, "Parquet file has no rows."
+    return True, ""
+
+
+def _optional_int(item: Mapping[str, object], names: tuple[str, ...]) -> int | None:
+    for name in names:
+        value = item.get(name)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        if isinstance(value, dict):
+            nested = _optional_int(value, ("bytes", "size", "rows", "count"))
+            if nested is not None:
+                return nested
+    return None
+
+
+def _retriable(message: str) -> bool:
+    return message.startswith("Could not reach") or "HTTP 429" in message or "HTTP 503" in message
 
 
 def _redact(text: str, api_key: str) -> str:

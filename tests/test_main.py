@@ -24,6 +24,8 @@ def test_help_exits_successfully(capsys: pytest.CaptureFixture[str]) -> None:
     assert "analyze" in output
     assert "evaluate-performance" in output
     assert "build-city-series" in output
+    assert "fetch-data-gov" in output
+    assert "prepare-data-gov" in output
 
 
 def test_missing_command_is_a_usage_error() -> None:

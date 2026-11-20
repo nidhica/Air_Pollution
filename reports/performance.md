@@ -114,6 +114,27 @@ Canonical raw, interim, processed, and analytics files unchanged: yes
 - output_writer: pyarrow
 - output_tables: 8
 
+## Later local run: already downloaded CPCB months
+
+Generated from the 2026-11-17 21:38–21:42 IST pipeline on the same class of machine (Windows 11, 12 CPUs, about 16 GB RAM, Python 3.12.7, Java 17, Spark 4.3.0, `local[*]`). This is still one local Spark session. It is not a cluster speedup.
+
+No new XKDR months were downloaded. `AQI_API_KEY` was not set, so `acquire` was not run. The run processed files already stored under `data/raw`.
+
+| Stage | Exit | Wall-clock seconds | Rows written |
+| --- | ---: | ---: | ---: |
+| preprocess | 0 | 100.7 | 1,101,728 |
+| detect-spikes | 0 | 55.0 | 1,101,728 annotated |
+| analyze | 0 | 55.8 | analytics tables |
+| build-city-series | 0 | 59.2 | 20,549 daily city rows; 471,777 hourly city rows |
+
+Input rows in the downloaded measurement files: 4,441,502. Rows matching CPCB CAAQM and PM2.5/PM10 inside 2024-01-01 to 2025-09-30: 1,101,728. Rows outside that window: 0. Raw files were not modified.
+
+Prepared Parquet under `data/processed` after this run: 36,159,164 bytes. The largest file is the annotated spike table.
+
+A cold read of the prepared tables used by the timeline (`load_timeline`, no Spark) took 0.966 seconds and returned 1,101,728 XKDR rows and 16,055 data.gov.in rows. Opening the dashboard does not recompute these tables. Changing a timeline filter uses the cached frames.
+
+The January 2024 section above remains the earlier one-month baseline. Do not compare the two wall-clock figures as a speedup: the later run reads more months and writes more than one million prepared rows.
+
 ## Limitations
 
 - The timed stages used one local Spark session on this machine. This is not a distributed cluster benchmark.

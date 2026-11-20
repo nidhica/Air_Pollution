@@ -305,7 +305,7 @@ def _document(
         "timezone": config.dataset.timezone,
         "input_file": str(source.resolve()),
         "output_dir": str(destination.resolve()),
-        "output_writer": "pyarrow",
+        "output_writer": "spark_parquet",
         "method": {
             "spikes_rescored": False,
             "eligibility": "non-null spike_threshold when that column is present; otherwise the stored baseline rule",

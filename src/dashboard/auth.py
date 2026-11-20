@@ -74,9 +74,10 @@ def begin_session(state: dict[str, object], email: str) -> None:
 
     state["authenticated"] = True
     state["user_email"] = email.strip().lower()
-    state["portal_view"] = "explore"
+    state["portal_view"] = "timeline"
     clear_city(state)
     clear_comparison(state)
+    clear_recent(state)
 
 
 def end_session(state: dict[str, object]) -> None:
@@ -87,6 +88,7 @@ def end_session(state: dict[str, object]) -> None:
     state["portal_view"] = "explore"
     clear_city(state)
     clear_comparison(state)
+    clear_recent(state)
 
 
 def clear_city(state: dict[str, object]) -> None:
@@ -110,6 +112,13 @@ def clear_comparison(state: dict[str, object]) -> None:
         "compare_dates",
         "compare_trend_pollutant",
     ):
+        state.pop(key, None)
+
+
+def clear_recent(state: dict[str, object]) -> None:
+    """Drop recent-snapshot filters so the next sign-in starts without them."""
+
+    for key in ("recent_state", "recent_city", "recent_station", "recent_pollutant"):
         state.pop(key, None)
 
 

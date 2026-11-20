@@ -25,6 +25,11 @@ secrets.yaml
 secrets.yml
 .streamlit/secrets.toml
 
+# On-demand XKDR query cache and archive metadata. Entries are derived responses, not source data.
+data/cache/**
+!data/cache/xkdr_query/.gitkeep
+!data/cache/xkdr_meta/.gitkeep
+
 # XKDR bulk archive and anything derived from it
 data/raw/**
 data/interim/**

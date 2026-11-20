@@ -299,7 +299,7 @@ def _clean(
         "output_dir": str(output_dir.resolve()),
         "output_file": str(output_file.resolve()),
         "partition_columns_retained": partition_columns,
-        "output_writer": "pyarrow",
+        "output_writer": "spark_parquet",
         "rules": CLEANING_RULES,
         "schemas": {
             "measurements": _schema(raw),
@@ -757,32 +757,30 @@ def _require_unchanged(fingerprints: list[dict[str, Any]]) -> None:
 
 
 def _write_parquet(frame: DataFrame, output_dir: Path, config: AppConfig) -> Path:
-    """Write one Parquet file with pyarrow and return its path.
+    """Write one Parquet file and return its path.
 
-    Spark's local file committer calls winutils.exe, which is not installed.
-    A directory of files also cannot be listed by this Hadoop build. Python
-    writes one file, and Spark reads that file path directly. ``year`` and
-    ``month`` stay as columns. The rows are the Spark result.
+    The rows stay in Spark and are written with ``DataFrame.write.parquet``.
+    Part files go to a temporary sibling directory. ``output_dir/data.parquet``
+    is replaced only after that write commits and the published file is readable.
+    A failure leaves an existing ``data.parquet`` in place. ``year`` and
+    ``month`` stay as columns. Timestamp instants are stored as microsecond
+    wall-clock values, matching ``_naive_timestamps``.
     """
 
-    import pyarrow as pa
-    import pyarrow.compute as pc
-    import pyarrow.parquet as pq
+    from preprocessing.parquet_store import store_parquet
 
-    resolved = output_dir.resolve()
-    raw_root = config.paths.raw_root.resolve()
-    if resolved == raw_root or raw_root in resolved.parents:
-        raise PreprocessingError(f"Refusing to write cleaned data under {raw_root}.")
-    output_file = resolved / "data.parquet"
-    if output_file.exists():
-        output_file.unlink()
-    resolved.mkdir(parents=True, exist_ok=True)
-    table = _naive_timestamps(frame.toArrow(), pa, pc)
-    pq.write_table(table, output_file, compression=config.spark.parquet_compression)
-    return output_file
+    return store_parquet(frame, output_dir, config)
 
 
 def _naive_timestamps(table: object, pa: object, pc: object) -> object:
+    """Return wall-clock microseconds for every timestamp column.
+
+    A zoned Arrow timestamp is converted with ``local_timestamp`` before the
+    zone is removed, so 00:30 in the session timezone stays 00:30. The Parquet
+    writer applies the same rule by casting a zoned Spark timestamp to
+    ``timestamp_ntz`` and does not call this function for a full DataFrame.
+    """
+
     columns = []
     fields = []
     for field in table.schema:  # type: ignore[attr-defined]

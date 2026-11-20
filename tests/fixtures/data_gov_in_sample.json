@@ -1,0 +1,30 @@
+{
+  "records": [
+    {
+      "country": "India",
+      "state": "Andhra Pradesh",
+      "city": "Kadapa",
+      "station": "Yerramukkapalli, Kadapa - APPCB",
+      "last_update": "17-11-2026 17:00:00",
+      "latitude": "14.465052",
+      "longitude": "78.824187",
+      "pollutant_id": "PM2.5",
+      "min_value": "52",
+      "max_value": "64",
+      "avg_value": "61"
+    },
+    {
+      "country": "India",
+      "state": "Andhra Pradesh",
+      "city": "Guntur",
+      "station": "Rajendra Nagar North, Guntur - APPCB",
+      "last_update": "17-11-2026 17:00:00",
+      "latitude": "16.316553",
+      "longitude": "80.413302",
+      "pollutant_id": "PM10",
+      "min_value": "53",
+      "max_value": "76",
+      "avg_value": "62"
+    }
+  ]
+}

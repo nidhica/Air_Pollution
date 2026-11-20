@@ -40,19 +40,26 @@ def test_login_session_accepts_the_demonstration_hash_and_logout_clears_it() -> 
     assert not verify_credentials("analyst@aeroscope.local", "wrong-password", users)
     assert not verify_credentials("other@aeroscope.local", "aeroscope-demo", users)
 
-    state: dict[str, object] = {"comparison_places": [("Delhi", "Delhi")], "compare_city_1": "Delhi, Delhi"}
+    state: dict[str, object] = {
+        "comparison_places": [("Delhi", "Delhi")],
+        "compare_city_1": "Delhi, Delhi",
+        "recent_state": "Delhi",
+    }
     begin_session(state, "analyst@aeroscope.local")
     select_city(state, "Delhi", "Delhi")
     assert state["authenticated"] is True
     assert state["city_selected"] is True
     assert "comparison_places" not in state
+    assert "recent_state" not in state
     state["comparison_places"] = [("Delhi", "Delhi")]
+    state["recent_city"] = "Delhi"
     end_session(state)
     assert state["authenticated"] is False
     assert state["user_email"] is None
     assert state["city_selected"] is False
     assert state["city_name"] is None
     assert "comparison_places" not in state
+    assert "recent_city" not in state
 
 
 def test_city_cards_list_recorded_cities_and_keep_missing_cities_separate() -> None:

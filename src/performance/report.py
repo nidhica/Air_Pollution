@@ -17,7 +17,7 @@ from typing import Any
 LIMITATIONS = (
     "The timed stages used one local Spark session on this machine. This is not a distributed cluster benchmark.",
     "No second hardware configuration or cluster size was timed, so no speedup is reported.",
-    "Spark on this Windows setup cannot commit Parquet through winutils.exe. Cleaned, spike, and analytics outputs are written as one PyArrow file.",
+    "Cleaned, spike, and analytics outputs are one Parquet file per table. Spark writes that file through its Parquet writer; the previous file is replaced only after the write commits.",
     "The stages ran one after another in the same process. A later stage may benefit from data that the operating system still has cached.",
     "These measurements describe pipeline execution. They are not prediction-accuracy scores and are not compared with machine-learning metrics from a research paper.",
 )

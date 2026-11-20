@@ -579,7 +579,7 @@ def _report_document(
         "timezone": config.dataset.timezone,
         "input_file": str(source.resolve()),
         "output_dir": str(output_dir.resolve()),
-        "output_writer": "pyarrow",
+        "output_writer": "spark_parquet",
         "denominators": DENOMINATORS,
         "parameters": {
             "minimum_baseline": config.spikes.minimum_baseline,

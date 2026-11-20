@@ -32,6 +32,9 @@ from dashboard.auth import (
     verify_credentials,
 )
 from dashboard.compare_page import render_city_comparison
+from dashboard.recent_page import render_recent_page
+from dashboard.coverage_page import render_coverage_page
+from dashboard.timeline_page import render_timeline_page
 from dashboard.cities import (
     build_city_cards,
     city_period,
@@ -76,6 +79,21 @@ def main() -> None:
     if not st.session_state.authenticated:
         _login()
         return
+    if st.session_state.get("portal_view") == "coverage":
+        _coverage_sidebar()
+        _brand()
+        render_coverage_page(repository_root())
+        return
+    if st.session_state.get("portal_view") == "timeline":
+        _timeline_sidebar()
+        _brand()
+        render_timeline_page(repository_root())
+        return
+    if st.session_state.get("portal_view") == "recent":
+        _recent_sidebar()
+        _brand()
+        render_recent_page(repository_root())
+        return
     try:
         bundle = _cached_bundle(str(repository_root()))
         portal = _cached_portal(str(repository_root()))
@@ -108,7 +126,9 @@ def _cached_portal(root_text: str) -> CityPortal:
 def _login() -> None:
     _brand()
     st.title("Air Pollution Analytics Portal")
-    st.caption("City exploration for CPCB CAAQM PM2.5 and PM10 spike analytics.")
+    st.caption(
+        "After sign-in, one date range shows the XKDR history and data.gov.in snapshots that fall inside it."
+    )
     left, center, right = st.columns([1, 1.15, 1])
     with center:
         with st.container(border=True):
@@ -462,13 +482,55 @@ def _comparison_sidebar() -> None:
         st.rerun()
 
 
-def _account_sidebar(*, show_compare: bool = True) -> None:
+def _recent_sidebar() -> None:
+    _account_sidebar(show_recent=False)
+    if st.sidebar.button("Historical cities", width="stretch"):
+        clear_city(st.session_state)
+        st.session_state.portal_view = "explore"
+        st.rerun()
+
+
+def _coverage_sidebar() -> None:
+    _account_sidebar(show_coverage=False, show_timeline=False)
+    if st.sidebar.button("Timeline", width="stretch", key="coverage-to-timeline"):
+        st.session_state.portal_view = "timeline"
+        st.rerun()
+    if st.sidebar.button("Historical cities", width="stretch"):
+        clear_city(st.session_state)
+        st.session_state.portal_view = "explore"
+        st.rerun()
+
+
+def _timeline_sidebar() -> None:
+    _account_sidebar(show_timeline=False)
+    if st.sidebar.button("Historical cities", width="stretch"):
+        clear_city(st.session_state)
+        st.session_state.portal_view = "explore"
+        st.rerun()
+
+
+def _account_sidebar(
+    *,
+    show_compare: bool = True,
+    show_recent: bool = True,
+    show_timeline: bool = True,
+    show_coverage: bool = True,
+) -> None:
     st.sidebar.markdown("**AEROSCOPE**")
     email = st.session_state.user_email or ""
     if email:
         st.sidebar.caption(email)
+    if show_timeline and st.sidebar.button("Timeline", width="stretch"):
+        st.session_state.portal_view = "timeline"
+        st.rerun()
     if show_compare and st.sidebar.button("City comparison", width="stretch"):
         st.session_state.portal_view = "compare"
+        st.rerun()
+    if show_coverage and st.sidebar.button("Data coverage", width="stretch"):
+        st.session_state.portal_view = "coverage"
+        st.rerun()
+    if show_recent and st.sidebar.button("Recent snapshots", width="stretch"):
+        st.session_state.portal_view = "recent"
         st.rerun()
     if st.sidebar.button("Log out", width="stretch"):
         end_session(st.session_state)
@@ -622,7 +684,7 @@ def _ensure_state() -> None:
         "city_selected": False,
         "city_name": None,
         "state_name": None,
-        "portal_view": "explore",
+        "portal_view": "timeline",
     }
     for key, value in defaults.items():
         if key not in st.session_state:

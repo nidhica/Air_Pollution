@@ -69,8 +69,8 @@ def test_repository_config_selects_cpcb_caaqm_pm() -> None:
     assert config.dataset.source_filter == "cpcb_caaqm"
     assert config.dataset.pollutants == ("PM2.5", "PM10")
     assert config.dataset.timezone == "Asia/Kolkata"
-    assert config.dataset.date_start == date(2025, 8, 1)
-    assert config.dataset.date_end == date(2025, 8, 31)
+    assert config.dataset.date_start == date(2024, 1, 1)
+    assert config.dataset.date_end == date(2026, 3, 31)
     assert config.dataset.columns.parameter == "parameter_name"
     assert config.dataset.columns.timestamp == "collected_at"
     assert config.dataset.partitions == ("year", "month")

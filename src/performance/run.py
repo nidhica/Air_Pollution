@@ -334,7 +334,7 @@ def _spike_counts(report: Any) -> tuple[int | None, int | None, dict[str, Any]]:
         {
             "eligible_observations": counts.get("eligible_records"),
             "candidate_spikes": counts.get("spike_records"),
-            "output_writer": "pyarrow",
+            "output_writer": "spark_parquet",
         },
     )
 

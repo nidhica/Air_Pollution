@@ -1,6 +1,6 @@
 # Air Pollution Spike Detection and Spatiotemporal Analytics in Indian Cities
 
-Academic Big Data Analytics project for CPCB CAAQM PM2.5 and PM10. The pipeline downloads the XKDR archive, inspects it, cleans it, flags statistical spikes, aggregates the results, and presents them in a Streamlit dashboard. The configured window in `config/settings.yaml` is 1–31 August 2025. That is the latest month in the XKDR bulk archive with a full CPCB CAAQM PM2.5 and PM10 record. March 2026 is published, but that file contains only US Embassy PM2.5. This repository does not contain air-quality measurements or computed results.
+Academic Big Data Analytics project for CPCB CAAQM PM2.5 and PM10. The pipeline downloads the XKDR archive, inspects it, cleans it, flags statistical spikes, aggregates the results, and presents them in a Streamlit dashboard. The configured window in `config/settings.yaml` is 1 January 2024 through 30 September 2025. Local CPCB CAAQM PM2.5 and PM10 files cover all of January 2024, all of August 2025, and 1 September 2025. Months between those files are not downloaded. March 2026 is on disk, but that file contains only US Embassy PM2.5 and is outside this window. Further XKDR months require `AQI_API_KEY`. This repository does not contain air-quality measurements or computed results.
 
 ## Question and scope
 
@@ -152,6 +152,9 @@ Shuffle partitions default to 8 for a laptop running `local[*]`. Increase that v
 | `utils.config_loader` | a JVM and the dataset |
 | `utils.spark_session` | the dataset; needs JDK 17 or 21 |
 | `ingestion.acquire` | the network; tests supply a fake transport |
+| `ingestion.xkdr_query` | the network; tests supply a fake transport and do not call `/v1/measurements` |
+| `dashboard.query_cache` | the network and the dashboard; tests use a temporary directory |
+| `ingestion.data_gov` | the network; tests supply a fake transport and do not call data.gov.in |
 | `ingestion.inspect` | the XKDR archive; tests pass the shared session a temporary fixture |
 | `preprocessing.clean` | the XKDR archive; tests pass the shared session a temporary fixture |
 | `analytics.spikes.detect` | the XKDR archive; tests pass the shared session a temporary fixture |
@@ -177,7 +180,30 @@ copy .env.example .env
 
 With `date_start` and `date_end` left null, `acquire` downloads every listed month. Set those dates in `config/settings.yaml` to limit the months. A finished file is skipped. An interrupted file remains `data.parquet.partial` and the next `acquire` continues it with an HTTP Range request.
 
+`acquire-xkdr` is the bounded command. With no extra arguments it only writes `data/interim/xkdr_acquisition_manifest.json` and does not download. Add `--month 2024-02` or `--start 2024-02 --end 2024-02` together with `--download` to fetch an explicit selection. A non-empty raw file is not replaced. The command does not call data.gov.in and does not change the hourly scheduled task.
+
+```powershell
+.\.venv\Scripts\python.exe main.py acquire-xkdr
+.\.venv\Scripts\python.exe main.py acquire-xkdr --download --month 2024-02
+```
+
 `pytest -m "not spark"` includes the acquisition tests and the preprocessing, spike, and analytics rules that do not need a JVM. `pytest -m spark` runs inspection, preprocessing, spike detection, and spatiotemporal aggregation against temporary synthetic fixtures, separate from `data/raw`.
+
+## On-demand measurements query
+
+`ingestion.xkdr_query` is a server-side client for `GET /v1/measurements`. The Timeline uses it for CPCB daily PM2.5 and PM10 aggregates on the most recent 7 days in Asia/Kolkata, including today. Older dates stay on prepared Parquet. The same split applies to every preset and to a custom range. It does not replace `acquire`. The API key is read from `AQI_API_KEY` or `.env` and is sent only as an `Authorization: Bearer` header. A failed or truncated recent request stays unavailable and does not replace those days with prepared history. data.gov.in remains a separate section.
+
+A query accepts an inclusive `start` and `end`, `source` (`cpcb_caaqm` or `us_embassy`), one or more pollutants, `agg` (`raw`, `hourly`, `daily`, or `monthly`), and optional `state`, `city`, and repeatable `station` filters. The only accepted body is `format=parquet`. HTTP 200 is accepted only when `X-Truncated` is false, `X-Row-Count` matches the table, and the documented columns are present. Timeouts, connection failures, text bodies, and truncated responses raise `QueryError` and return no table.
+
+`dashboard.query_cache` stores a completed body under `data/cache/xkdr_query/`. The filename is a SHA-256 of the normalized dates, source, pollutants, aggregation, and location filters. The key is not part of that hash. A write uses a temporary file and replaces the cache file only after the write finishes. Entries expire after seven days unless a caller chooses another TTL. The cache refuses a directory inside `data/raw` or `data/processed`.
+
+A live daily PM2.5 request for 15 February 2024 returned HTTP 200, content type `application/vnd.apache.parquet`, `X-Truncated: false`, and `X-Row-Count` equal to the Parquet row count. The aggregate columns were `mean`, `min`, `max`, and `n`, and the period column was `period_start`. The query client accepts `period_start` as that period column and still requires `mean`, `min`, `max`, and `n`. Raw rows are still expected to contain `station_id`, `parameter_name`, `unit`, `collected_at`, and `value` only. City and coordinates are not joined in this phase.
+
+The live check is `integration/test_xkdr_query_live.py`. It is outside `tests/`, so a normal pytest run does not call the network. It makes one daily PM2.5 request for 15 February 2024 and does not write the response.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest integration/test_xkdr_query_live.py -s
+```
 
 ## Preprocess
 
@@ -187,7 +213,7 @@ With `date_start` and `date_end` left null, `acquire` downloads every listed mon
 .\.venv\Scripts\python.exe main.py preprocess
 ```
 
-The row counts and enrichment results are written to `data/interim/preprocessing_report.json`. Cleaned rows are saved as one Parquet file, `data/processed/measurements/data.parquet`, with `year` and `month` kept as columns. Spark on this Windows setup cannot create or list a Parquet directory because Hadoop calls `winutils.exe`, which is not installed. Spark still calculates every cleaned row, and it reads the finished file by its path.
+The row counts and enrichment results are written to `data/interim/preprocessing_report.json`. Cleaned rows are saved as one Parquet file, `data/processed/measurements/data.parquet`, with `year` and `month` kept as columns. Spark writes the rows with its Parquet writer into a temporary directory, then replaces `data.parquet` only after that write finishes. An existing file is left in place when the write fails. Spark reads the finished file by its path.
 
 ## Spike detection
 
@@ -211,9 +237,70 @@ City and state names are used only when a station has one non-null value. Latitu
 
 Aggregates are written as one Parquet file and one CSV per table under `data/processed/analytics/`. The report is `data/interim/analytics_report.json`. The raw files and the measurement and spike Parquet files are hashed before and after the job and are not rewritten.
 
+## Recent snapshots from data.gov.in
+
+The historical XKDR pipeline stays the source for spike detection and the city portal. A separate pair of commands reads the Government of India Open Government Data resource “Real time Air Quality Index from various locations.”
+
+- Catalog: [data.gov.in/catalog/real-time-air-quality-index](https://www.data.gov.in/catalog/real-time-air-quality-index)
+- Resource ID: `3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69`
+- Endpoint: `https://api.data.gov.in/resource/3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69`
+- Publisher: Central Pollution Control Board, under the Ministry of Environment, Forest and Climate Change
+- Licence: National Data Sharing and Accessibility Policy (NDSAP) / Government Open Data License
+
+Register at [data.gov.in](https://www.data.gov.in/), create an API key, and put it in the untracked `.env` file as `DATA_GOV_IN_API_KEY`. The commands never print or store that key.
+
+```powershell
+.\.venv\Scripts\python.exe main.py fetch-data-gov
+.\.venv\Scripts\python.exe main.py prepare-data-gov
+```
+
+`fetch-data-gov` pages through the current table and writes each raw JSON page under `data/raw/data_gov_in/snapshots/`. Normalized rows go to `data/interim/data_gov_in/records/data.parquet`. A row is identified by state, city, station, pollutant, and `last_update`. Repeating a fetch does not store that row again. A later hour is appended. XKDR files under `data/raw/v1` are not rewritten.
+
+`prepare-data-gov` reads only that normalized file with the shared Spark session. It parses `last_update` as `DD-MM-YYYY HH:MM:SS` in Asia/Kolkata, parses the reported minimum, maximum, and average, and checks coordinates. The API response inspected for this project has no measurement unit, so the prepared values keep the label “not documented by the API.” They are not called µg/m³, they are not filled with zero, and they are not passed through the rolling spike detector. No AQI field is created. The output is `data/processed/data_gov_in/`.
+
+The resource is a current snapshot. A request for an older timestamp returned no rows. The portal draws a trend only after more than one distinct `last_update` has been stored for the same station and pollutant. That chart uses the API timestamp on the time axis and draws the reported minimum, maximum, and average as separate lines. A repeated fetch of the same hour stays one point. The Recent snapshots page says the data was retrieved. It does not describe the feed as a live stream.
+
+`API last_update` is the timestamp reported by data.gov.in for that observation. The local retrieval time is when AEROSCOPE fetched the response. Repeating a fetch during the same source hour stores the raw JSON again and does not add another normalized observation.
+
+### Automatic hourly collection
+
+`scripts/run_data_gov_pipeline.ps1` runs `fetch-data-gov` and, only after that command exits 0, `prepare-data-gov`. It uses `.venv\Scripts\python.exe`, reads the existing `.env` entry, and does not print the API key. A second run waits outside the lock while the first run is active. Raw snapshots and older normalized rows are left in place. The dashboard does not call the API or Spark when the page refreshes; it reads `data/processed/data_gov_in/` and, when present, `logs/data_gov_automation/status.json`.
+
+An hourly run does not guarantee a new observation. The API table often keeps the same `last_update` for every row until the publisher moves to the next hour.
+
+Install the scheduled task only when you want it registered:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_data_gov_task.ps1
+```
+
+The task name is `AEROSCOPE_DataGov_Hourly`. It starts at the next local hour and repeats every hour. It runs as the current Windows user while that user is logged on, including when the AEROSCOPE browser tab is closed. It does not run after Windows sign-out, because the task does not store a password. A new run is ignored while the previous one is still active. Each run stops if it is still going after 50 minutes.
+
+Check it:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_data_gov_task.ps1
+```
+
+Run it once by hand:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_data_gov_pipeline.ps1
+```
+
+Remove only that task:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall_data_gov_task.ps1
+```
+
+Logs are `logs/data_gov_automation/pipeline-*.log`, plus `status.json` for the latest result. Pipeline logs older than 14 days are deleted, and at most 400 pipeline logs are kept. `status.json`, raw snapshots, and normalized rows are not part of that cleanup.
+
+If a run fails, open the newest `pipeline-*.log`. Exit code 3 means `.venv\Scripts\python.exe` is missing. Exit code 4 means `DATA_GOV_IN_API_KEY` is missing. A non-zero fetch exit means preparation did not start. A fetch exit of 0 followed by a non-zero preparation exit means Spark preparation failed. The log should contain `[REDACTED]` where a key would otherwise have been copied from command output. A Task Scheduler result of `3221225786` (`0xC000013A`) means the scheduled process was interrupted before it reported its own exit code. It is not a successful run. The install script does not pass `-WindowStyle Hidden`. Spark warnings on the Python error stream are saved in the pipeline log; they do not stop the run by themselves. Paths that contain spaces are passed to Python as single quoted arguments.
+
 ## Dashboard
 
-The AEROSCOPE portal is a demonstration sign-in followed by a city page, a city dashboard, and a City Comparison page. After sign-in, City comparison is in the sidebar. It compares two or three city–state pairs from the saved city aggregates and the city daily and hourly series. The sign-in checks a PBKDF2-HMAC-SHA256 hash in `config/portal_users.json`. It is not production authentication: the demonstration password is published below, the session lives in the browser tab, and there is no account database.
+The AEROSCOPE portal is a demonstration sign-in followed by a Timeline page. A Data coverage page in the sidebar lists which XKDR months are processed, partial, downloaded but outside the prepared CPCB series, or not downloaded. “Not downloaded” means the file is absent locally. It does not mean the publisher has no archive. The timeline offers the last 7, 30, or 90 days, the last year, or a custom start and end. It reads the prepared XKDR and data.gov.in tables and shows each source that has observations in that period. XKDR concentrations are in µg/m³. data.gov.in min, max, and average values have no documented unit, so the page does not average them with XKDR. A period with no rows states the stored date range for each source and does not substitute another period. Historical cities, City comparison, and Recent snapshots remain in the sidebar. The sign-in checks a PBKDF2-HMAC-SHA256 hash in `config/portal_users.json`. It is not production authentication: the demonstration password is published below, the session lives in the browser tab, and there is no account database.
 
 `src/dashboard/app.py` reads the saved analytics tables, the city series, the analytics report, the annotated Parquet row count, and the spike-only rows. It does not rescore measurements. City daily and hourly charts come from `data/processed/city_portal`. The national `daily_by_pollutant` and `hourly_by_pollutant` tables are not used as city trends. Station rankings and the map use the selected city's saved station IDs over the full analyzed window. Stations without a city stay on the city page and are not given a city name. Stations without latitude and longitude are listed and are not placed on the map.
 
